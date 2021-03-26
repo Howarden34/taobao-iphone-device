@@ -150,6 +150,10 @@ def cmd_shutdown(args: argparse.Namespace):
     d = _udid2device(args.udid)
     print(d.shutdown())
 
+def cmd_sleep(args: argparse.Namespace):
+    d = _udid2device(args.udid)
+    print(d.sleep())
+
 
 def cmd_parse(args: argparse.Namespace):
     uri = args.uri
@@ -498,6 +502,7 @@ _commands = [
          help="uninstall application"),
     dict(action=cmd_reboot, command="reboot", help="reboot device"),
     dict(action=cmd_shutdown, command="shutdown", help="shutdown device"),
+    dict(action=cmd_sleep, command="sleep", help="sleep device"),
     dict(action=cmd_parse,
          command="parse",
          flags=[dict(args=['uri'], help="local path or url")],

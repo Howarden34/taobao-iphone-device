@@ -437,6 +437,15 @@ class BaseDevice():
         })
         return ret['Status']
 
+    def sleep(self):
+        "warning!!!: put device into deep sleep mode and disconnects from host"
+        conn = self.start_service("com.apple.mobile.diagnostics_relay")
+        ret = conn.send_recv_packet({
+            "Request": "Sleep",
+            "Label": PROGRAM_NAME,
+        })
+        return ret['Status']
+
     def get_io_power(self) -> dict:
         return self.get_io_registry('IOPMPowerSource')
 
