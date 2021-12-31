@@ -6,9 +6,11 @@ import platform
 import plistlib
 import pprint
 import sys
+import typing
 import uuid
 from typing import Optional, Union
 
+from ._types import DeviceInfo, ConnectionType
 from ._proto import PROGRAM_NAME, UsbmuxReplyCode
 from ._safe_socket import PlistSocket
 from .exceptions import * # pragma warning disables S2208
@@ -48,9 +50,11 @@ class Usbmux:
             self._check(recv_data)
             return recv_data
 
-    def device_list(self):
+    def device_list(self) -> typing.List[DeviceInfo]:
         """
-        Return example:
+        Return DeviceInfo and contains bother USB and NETWORK device
+
+        Data processing example:
         {'DeviceList': [{'DeviceID': 37,
                 'MessageType': 'Attached',
                 'Properties': {'ConnectionSpeed': 480000000,
@@ -70,11 +74,20 @@ class Usbmux:
             # "ProcessID": 0, # Xcode send it processID
         }
         data = self.send_recv(payload)
-        _devices = [item['Properties'] for item in data['DeviceList']]
-        return [d for d in _devices if d['ConnectionType'] == 'USB']
+        result = {}
+        for item in data['DeviceList']:
+            prop = item['Properties']
+            info = DeviceInfo()
+            info.udid = prop['SerialNumber']
+            info.device_id = prop['DeviceID']
+            info.conn_type = prop['ConnectionType']
+            if info.udid in result and info.conn_type == ConnectionType.NETWORK:
+                continue
+            result[info.udid] = info
+        return list(result.values())
 
     def device_udid_list(self) -> list:
-        return [d['SerialNumber'] for d in self.device_list()]
+        return [d.udid for d in self.device_list()]
 
     def _check(self, data: dict):
         if 'Number' in data and data['Number'] != 0:
@@ -95,7 +108,7 @@ class Usbmux:
         hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
         return str(hostid).upper()
 
-    def watch_device(self):
+    def watch_device(self) -> typing.Iterator[dict]:
         """
         Return iterator of data as follows
         - {'DeviceID': 59, 'MessageType': 'Detached'}

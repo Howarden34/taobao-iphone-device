@@ -10,6 +10,15 @@ git clone --depth 5 https://github.com/alibaba/tidevice
 ## Certificate
 [各种安全证书间的关系及相关操作](https://www.jianshu.com/p/96df7de54375)
 
+## Inspect usbmuxd data
+Not finished yet.
+
+```
+cd scripts
+sudo ./run-usbmuxd-proxy.sh
+```
+
+The captured data will be stored in `usbmuxd-dumpdata`
 
 ## Pair
 1. Retrieve **Device Public Key** from device
@@ -27,11 +36,19 @@ tree /Volumes/DeveloperDiskImage
 Build `WebDriverAgentRunnerUITests-Runner.app` with the following command. `.app` should located in `/tmp/derivedDataPath/Release-iphoneos`
 
 ```bash
-xcodebuild build-for-testing -workspace WebDriverAgent.xcworkspace/ -scheme WebDriverAgent -sdk iphoneos -configuration Release -derivedDataPath /tmp/derivedDataPath
+$ xcodebuild build-for-testing -scheme WebDriverAgentRunner -sdk iphoneos -configuration Release -derivedDataPath /tmp/derivedDataPath
+$ cd /tmp/derivedDataPath
+$ cd Build/Products/Release-iphoneos # path might be different
+
+# Created folder `Payload` and put `.app` into it
+# then compressed to zip, change extention name to `.ipa`. That's all.
+$ mkdir Payload && mv *.app Payload
+$ zip -r WDA.ipa Payload
+
+# test if ipa is fine
+$ tidevice parse WDA.ipa
+$ tidevice install WDA.ipa # install to device
 ```
-
-Created folder `Payload` and put `.app` into it, then compressed to zip, change extention name to `.ipa`, and resign. That's all.
-
 
 ## Publish package to Pypi using Github Actions
 Ref: https://packaging.python.org/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/

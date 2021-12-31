@@ -10,6 +10,7 @@ import socket
 import ssl
 import struct
 import plistlib
+import threading
 
 from typing import Union, Any
 from .exceptions import *
@@ -17,14 +18,23 @@ from ._proto import PROGRAM_NAME
 
 logger = logging.getLogger(PROGRAM_NAME)
 
+_n = [0]
+_nlock = threading.Lock()
 
-class SafeStreamSocket():
+def get_uniq_id() -> int:
+    with _nlock:
+        _n[0] += 1
+        return _n[0]
+
+
+class SafeStreamSocket:
     def __init__(self, addr: Union[str, tuple, socket.socket,
                                    Any]):
         """
         Args:
             addr: can be /var/run/usbmuxd or (localhost, 27015)
         """
+        self._id = get_uniq_id()
         self._sock = None
         if isinstance(addr, socket.socket):
             self._sock = addr
@@ -46,6 +56,14 @@ class SafeStreamSocket():
             family = socket.AF_INET
         self._sock = socket.socket(family, socket.SOCK_STREAM)
         self._sock.connect(addr)
+        
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    def get_socket(self) -> socket.socket:
+        return self._sock
 
     def recv(self, bufsize: int = 4096) -> bytes:
         return self._sock.recv(bufsize)
@@ -67,14 +85,16 @@ class SafeStreamSocket():
         # logger.debug("Switch to ssl")
         assert os.path.isfile(pemfile)
         self._dup_sock = self._sock.dup()
-        ssock = ssl.wrap_socket(self._sock,
-                                keyfile=pemfile,
-                                certfile=pemfile,
-                                ssl_version=ssl.PROTOCOL_TLSv1)
+        
+        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        context.load_cert_chain(pemfile, keyfile=pemfile)
+        context.check_hostname = False
+        ssock = context.wrap_socket(self._sock, server_hostname="iphone.localhost")
+        
         self._sock = ssock
 
     def close(self):
-        logger.debug("Socket %r closed", self)
+        logger.debug("Socket %d closed", self._id)
         self._sock.close()
 
     def __enter__(self):
@@ -116,7 +136,7 @@ class PlistSocket(SafeStreamSocket):
         #if self.is_secure():
         #    logger.debug(secure_text + " send: %s", payload)
         #else:
-        # logger.debug("send: %s", payload)
+        logger.debug("SEND(%d): %s", self.id, payload)
 
         body_data = plistlib.dumps(payload)
         if self._first:  # first package
@@ -143,12 +163,11 @@ class PlistSocket(SafeStreamSocket):
         if 'PairRecordData' in payload:
             logger.debug("Recv pair record data ...")
         else:
-            #if self.is_secure():
+            # if self.is_secure():
             #    logger.debug(secure_text + " recv" + Color.END + ": %s",
             #                 payload)
-            #else:
-            pass
-            # logger.debug("recv: %s", payload)
+            # else:
+            logger.debug("RECV(%d): %s", self.id, payload)
         return payload
 
     def send_recv_packet(self, payload: dict) -> dict:

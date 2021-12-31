@@ -21,15 +21,17 @@ import ssl
 import struct
 import threading
 import typing
+import logging
 from collections import defaultdict, namedtuple
 from typing import Any, List, Optional, Tuple, Union, Iterator
 
 from . import bplist
 from . import struct2 as ct
 from ._safe_socket import PlistSocket
-from ._utils import logger
-from ._proto import InstrumentsService
+from ._proto import InstrumentsService, LOG
 from .exceptions import MuxError, ServiceError
+
+logger = logging.getLogger(LOG.xctest)
 
 DTXMessageHeader = ct.Struct("DTXMessageHeader",
     ct.UInt32("magic", 0x1F3D5B79),
@@ -503,12 +505,11 @@ class DTXService(PlistSocket):
     def _call_handlers(self, event_name: Event, data: Any = None) -> bool:
         """
         Returns:
-            if called
+            return handle func return
         """
         func = self._handlers.get(event_name)
         if func:
-            func(data)
-            return True
+            return func(data)
 
     def _reply_null(self, m: DTXMessage):
         """ null reply means message received """
@@ -519,6 +520,7 @@ class DTXService(PlistSocket):
 
     def _handle_dtx_message(self, m: DTXMessage) -> bool:
         # logger.warning("Callback: identifier: %s", m.result) # TODO
+        assert m.header.expects_reply == 1
 
         if m.channel_id == 0xFFFFFFFF and m.flags == 0x05:
             return self._reply_null(m)
@@ -605,7 +607,7 @@ class DTXService(PlistSocket):
             else:
                 handled = self._handle_dtx_message(dtxm)
                 if not handled:
-                    logger.debug("server request not handled: %s", dtxm.result)
+                    #logger.debug("server request not handled: %s", dtxm.result) # too many logs
                     self._reply_null(dtxm)
         elif mheader.conversation_index == 2:
             # usally NSError message
@@ -776,9 +778,9 @@ class ServiceInstruments(DTXService):
         """
         channel = self.make_channel(
             "com.apple.instruments.server.services.graphics.opengl")
-        print("Channel:", channel)
+        # print("Channel:", channel)
 
-        print("Start sampling")
+        # print("Start sampling")
         aux = AUXMessageBuffer()
         aux.append_obj(0)
         payload = DTXPayload.build("startSamplingAtTimeInterval:", [0])
@@ -792,7 +794,7 @@ class ServiceInstruments(DTXService):
             for m in iter(que.get, None):
                 if m.channel_id != 0xFFFFFFFF:
                     continue
-                self._reply_null(m)
+                # self._reply_null(m)
                 yield m.result
         finally:
             self.close()
@@ -914,7 +916,11 @@ class ServiceInstruments(DTXService):
         ch_network = 'com.apple.xcode.debug-gauge-data-providers.NetworkStatistics'
         return self.call_message(ch_network, 'startSamplingForPIDs:', [{pid}])
 
-    def get_process_network_stats(self, pid: int) -> Iterator[dict]:
+    def stop_network_sampling(self, pid: int):
+        ch_network = 'com.apple.xcode.debug-gauge-data-providers.NetworkStatistics'
+        return self.call_message(ch_network, 'stopSamplingForPIDs:', [{pid}])
+
+    def get_process_network_stats(self, pid: int) -> Optional[Iterator[dict]]:
         """
         经测试数据始终不是很准，用safari测试，每次刷新图片的时候，rx.bytes总是不动
         """
@@ -935,7 +941,7 @@ class ServiceInstruments(DTXService):
             'net.tx.packets.delta'
         }, {pid}]
         ret = self.call_message(ch_network, 'sampleAttributes:forPIDs:', args)
-        return ret[pid]
+        return ret.get(pid)
     
     def iter_network(self) -> Iterator[dict]:
         """
